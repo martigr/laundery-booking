@@ -1,3 +1,5 @@
+import os
+import logging
 from flask import Flask, render_template, request, redirect, abort, session
 import sqlite3
 from datetime import date, timedelta
@@ -6,14 +8,35 @@ from collections import defaultdict
 from werkzeug.security import generate_password_hash, check_password_hash
 import functools
 
+# Basic logging
+logging.basicConfig(level=os.environ.get('LOG_LEVEL', 'INFO').upper())
+
 app = Flask(__name__)
-app.secret_key = "your-secret-key-change-this"
-DB = "reservations.db"
+
+# Configuration from environment
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or os.environ.get('FLASK_SECRET') or 'please-change-this-secret'
+if app.config['SECRET_KEY'] == 'please-change-this-secret':
+    logging.warning("Using default SECRET_KEY — set SECRET_KEY env var in production")
+
+# SQLite DB path (can be set via env var)
+DB = os.environ.get('DATABASE') or os.path.join(os.getcwd(), 'reservations.db')
+
+# Session cookie security settings (toggle via env vars)
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SECURE'] = os.environ.get('SESSION_COOKIE_SECURE', '0') == '1'
+app.config['SESSION_COOKIE_SAMESITE'] = os.environ.get('SESSION_COOKIE_SAMESITE', 'Lax')
 
 SLOTS = ["Vormittag", "Nachmittag", "Abend"]
 
 def db():
-    return sqlite3.connect(DB)
+    # Use a per-call connection with WAL to improve concurrency under WSGI servers
+    con = sqlite3.connect(DB, timeout=30, check_same_thread=False)
+    con.row_factory = sqlite3.Row
+    try:
+        con.execute('PRAGMA journal_mode=WAL;')
+    except Exception:
+        logging.exception('Could not set WAL mode on SQLite')
+    return con
 
 def init_db():
     with db() as con:
@@ -215,6 +238,17 @@ def delete(rid):
 
     return redirect(request.referrer or "/")
 
+# Health endpoint for load balancers / container probes
+@app.route('/health')
+def health():
+    return 'ok', 200
+
 if __name__ == "__main__":
+    # Ensure DB schema exists on startup
     init_db()
-    app.run(host="0.0.0.0", port=5000)
+
+    port = int(os.environ.get('PORT', 5000))
+
+    # For production, run this app with a WSGI server such as Gunicorn on Linux.
+    logging.info('Starting development server on 0.0.0.0:%s (use Gunicorn for production)', port)
+    app.run(host='0.0.0.0', port=port)
