@@ -24,23 +24,46 @@ A Flask-based web application for managing shared laundry room reservations in a
    pip install -r requirements.txt
    ```
 
-## Running Locally
+## Running Locally (Development)
+
+Use the built-in Flask server only for development. From the `laundery` folder:
 
 ```bash
+# set FLASK_APP if needed and run for development
 cd laundery
 python app.py
 ```
 
-The app will be available at `http://localhost:5000`
+The app will be available at `http://localhost:5000`.
 
-## Docker
+## Running Locally (Production-like)
 
-Build and run with Docker:
+Run a production WSGI server on your machine. Example (Unix):
 
 ```bash
-docker build -t laundery-booking .
-docker run -p 5000:5000 laundery-booking
+# using Gunicorn
+pip install -r requirements.txt
+cd laundery
+gunicorn -w 4 -b 0.0.0.0:5000 app:app
 ```
+
+This guide targets Linux-based deployments; on Linux use Gunicorn as shown above. For Windows, use Docker or WSL if needed.
+
+## Docker (Production)
+
+Set a safe secret and run Gunicorn inside the container:
+
+```bash
+# build
+docker build -t laundery-booking .
+# run (replace SECRET_KEY and optionally DATABASE)
+docker run -e SECRET_KEY='a-very-long-random-secret' -p 5000:5000 laundery-booking
+```
+
+Notes:
+- Set `SECRET_KEY` to a long random string in production. Do not commit it to source control.
+- You can set `DATABASE` to point to a persistent file or external DB.
+- The app exposes `/health` for health checks.
 
 ## Database
 
